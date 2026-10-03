@@ -1,0 +1,35 @@
+# k3d / laptop — lighter footprint; Keycloak + Kong off by default
+postgres:
+  storage: 4Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+valkey:
+  enabled: true
+
+garage:
+  enabled: true
+  metaStorage: 256Mi
+  dataStorage: 5Gi
+
+keycloak:
+  enabled: false
+
+gateway:
+  enabled: false
+
+mail:
+  enabled: true
+  requireAuth: false
+  imagePullPolicy: IfNotPresent
+  smtp:
+    host: mailhog
+    port: "1025"
+    secure: "false"
+  mailhog:
+    enabled: true

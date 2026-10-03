@@ -1,0 +1,6 @@
+apiVersion: v2
+name: platform
+description: AzerSoft shared platform (postgres, valkey, garage S3, keycloak, gateway, mail)
+type: application
+version: 0.2.1
+appVersion: "0.2.1"

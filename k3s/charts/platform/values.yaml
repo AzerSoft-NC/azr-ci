@@ -1,0 +1,123 @@
+# Default chart values — override via ci/k3s/values/{local,droplet}.yaml
+
+namespace: platform
+
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  storage: 8Gi
+  storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # Passwords via Secret platform-postgres (create out-of-band or sealed-secrets)
+  existingSecret: platform-postgres
+  secretKeys:
+    postgresPassword: postgres-password
+    azrWwwPassword: azr-www-password
+    shippingRatesPassword: shipping-rates-password
+    keycloakPassword: keycloak-password
+    clientSpacePassword: client-space-password
+
+valkey:
+  enabled: true
+  image: valkey/valkey:9.1.2-alpine
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+garage:
+  enabled: true
+  image: dxflrs/garage:v2.4.1
+  initImage: busybox:1.36
+  metaStorage: 512Mi
+  dataStorage: 20Gi
+  storageClassName: ""
+  s3Region: azersoft
+  rootDomain: azersoft.local
+  existingSecret: platform-garage
+  secretKeys:
+    rpcSecret: rpc-secret
+    adminToken: admin-token
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+keycloak:
+  enabled: false
+  image: quay.io/keycloak/keycloak:26.0
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # Expects postgres DB keycloak + Secret platform-keycloak
+  existingSecret: platform-keycloak
+  secretKeys:
+    adminPassword: admin-password
+
+gateway:
+  enabled: false
+  # Kong DB-less — routes/JWT configured via ConfigMap later
+  image: kong:3.8
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+mail:
+  enabled: false
+  # Image published by infra/azr-mailer (.github/workflows/publish.yml)
+  image: ghcr.io/azersoft-nc/azr-mailer:latest
+  imagePullPolicy: IfNotPresent
+  nodeEnv: production
+  requireAuth: true
+  behindProxy: true
+  # Empty = server-to-server only (ClusterIP). Browsers need an explicit origin list.
+  allowedOrigins: ""
+  smtp:
+    host: ""
+    port: "587"
+    secure: "false"
+  # Create out-of-band (just secrets-local on k3d). Keys optional at pod start.
+  existingSecret: platform-mail
+  secretKeys:
+    authToken: auth-token
+    appTokensJson: app-tokens-json
+    smtpUser: smtp-user
+    smtpPass: smtp-pass
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  mailhog:
+    enabled: false
+    image: mailhog/mailhog:v1.0.1
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

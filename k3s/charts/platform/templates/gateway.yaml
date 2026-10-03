@@ -1,0 +1,113 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-declarative
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    _transform: true
+    services:
+      - name: client-space
+        url: http://client-space.apps.svc.cluster.local:3000
+        routes:
+          - name: client-space-trpc
+            hosts:
+              - espace.apps.azersoft.nc
+            paths:
+              - /api/trpc
+            strip_path: false
+        plugins:
+          - name: jwt
+            config:
+              key_claim_name: iss
+    # JWT consumer for the Keycloak realm key is registered out of band.
+    # Until that consumer exists, Kong rejects /api/trpc on this host.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: gateway
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: kong
+          image: {{ .Values.gateway.image }}
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: /kong/kong.yml
+            - name: KONG_PROXY_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_ADMIN_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_PROXY_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_ADMIN_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_PROXY_LISTEN
+              value: "0.0.0.0:8000"
+            - name: KONG_ADMIN_LISTEN
+              value: "0.0.0.0:8001"
+          ports:
+            - containerPort: 8000
+              name: proxy
+            - containerPort: 8001
+              name: admin
+          volumeMounts:
+            - name: kong-config
+              mountPath: /kong
+              readOnly: true
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: admin
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: kong-config
+          configMap:
+            name: kong-declarative
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: proxy
+      name: proxy
+    - port: 8001
+      targetPort: admin
+      name: admin
+  selector:
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

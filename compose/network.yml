@@ -1,0 +1,14 @@
+# Shared external network — create once on each machine:
+#   docker network create azersoft
+#
+# Each app compose.yml attaches services to:
+#
+# networks:
+#   azersoft:
+#     external: true
+#     name: azersoft
+
+networks:
+  azersoft:
+    name: azersoft
+    external: true

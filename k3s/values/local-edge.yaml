@@ -1,0 +1,16 @@
+# edge-nginx overrides for k3d (HTTP on laptop :8080)
+hostPorts:
+  http: 8080
+  https: 0
+image: nginx:1.27-alpine
+
+# No app/platform upstreams on first smoke — healthz only
+upstreams:
+  www:
+    enabled: false
+  shipping:
+    enabled: false
+  keycloak:
+    enabled: false
+  gateway:
+    enabled: false

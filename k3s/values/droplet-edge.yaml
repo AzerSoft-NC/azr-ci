@@ -1,0 +1,6 @@
+# edge-nginx overrides for droplet
+hostPorts:
+  http: 80
+  https: 443
+# Switch to GHCR image from infra/azr-nginx when published
+image: nginx:1.27-alpine

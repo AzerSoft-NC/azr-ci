@@ -1,0 +1,8 @@
+do_token   = "dop_v1_xxxxxxxxxxxxxxxx"
+droplet_id = 123456789
+droplet_name = "ubuntu-azr-1"
+region     = "sgp1"
+manage_dns = false
+
+# Restrict SSH in production:
+# ssh_allowed_cidrs = ["203.0.113.10/32"]

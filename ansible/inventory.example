@@ -1,0 +1,2 @@
+[droplet]
+ubuntu-azr-1 ansible_host=YOUR_DROPLET_IP

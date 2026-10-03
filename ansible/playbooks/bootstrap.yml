@@ -1,0 +1,128 @@
+---
+- name: Bootstrap AzerSoft droplet
+  hosts: droplet
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+
+  tasks:
+    - name: Ensure apt cache is fresh
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - ufw
+          - unattended-upgrades
+        state: present
+
+    - name: Create docker group
+      ansible.builtin.group:
+        name: docker
+        state: present
+
+    - name: Create deploy group
+      ansible.builtin.group:
+        name: "{{ deploy_group }}"
+        state: present
+
+    - name: Create deploy user
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        groups: docker
+        append: true
+        shell: /bin/bash
+        create_home: true
+
+    - name: Add Docker GPG key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker Engine and compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Enable and start Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create azersoft docker network
+      community.docker.docker_network:
+        name: azersoft
+        state: present
+      become_user: "{{ deploy_user }}"
+
+    - name: Create app directories under opt_root
+      ansible.builtin.file:
+        path: "{{ opt_root }}/{{ item }}"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        mode: "0755"
+      loop:
+        - nginx
+        - azr-www
+        - shopify-nc-shipping-rates
+
+    - name: UFW allow SSH
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: UFW allow HTTP
+      community.general.ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+
+    - name: UFW allow HTTPS
+      community.general.ufw:
+        rule: allow
+        port: "443"
+        proto: tcp
+
+    - name: Enable UFW
+      community.general.ufw:
+        state: enabled
+
+    - name: Disable and stop host nginx (replaced by container)
+      ansible.builtin.service:
+        name: nginx
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Disable password SSH when flag set
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
+      when: disable_password_auth | bool
+      notify: Restart sshd
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: ssh
+        state: restarted

@@ -1,0 +1,218 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-nginx-conf
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "edge-nginx.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      include       /etc/nginx/mime.types;
+      default_type  application/octet-stream;
+      sendfile        on;
+      keepalive_timeout  65;
+      include /etc/nginx/conf.d/*.conf;
+    }
+  default.conf: |
+    # Phase-1 HTTP edge — TLS terminates here later (cert-manager or host mount).
+    # Align vhosts with infra/azr-nginx when cutting over.
+
+    {{- if .Values.upstreams.www.enabled }}
+    upstream www { server {{ .Values.upstreams.www.host }}; }
+    {{- end }}
+    {{- if .Values.upstreams.shipping.enabled }}
+    upstream shipping { server {{ .Values.upstreams.shipping.host }}; }
+    {{- end }}
+    {{- if .Values.upstreams.keycloak.enabled }}
+    upstream keycloak { server {{ .Values.upstreams.keycloak.host }}; }
+    {{- end }}
+    {{- if .Values.upstreams.gateway.enabled }}
+    upstream gateway { server {{ .Values.upstreams.gateway.host }}; }
+    {{- end }}
+    {{- if .Values.upstreams.clientSpace.enabled }}
+    upstream client_space { server {{ .Values.upstreams.clientSpace.host }}; }
+    {{- end }}
+
+    server {
+      listen 80 default_server;
+      server_name _;
+
+      location /healthz {
+        return 200 'ok';
+        add_header Content-Type text/plain;
+      }
+
+      {{- if .Values.upstreams.www.enabled }}
+      location / {
+        proxy_pass http://www;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      {{- else }}
+      location / {
+        return 503 'upstream www disabled';
+        add_header Content-Type text/plain;
+      }
+      {{- end }}
+    }
+
+    {{- if or .Values.upstreams.shipping.enabled .Values.upstreams.gateway.enabled }}
+    server {
+      listen 80;
+      server_name apps.azersoft.nc;
+
+      {{- if .Values.upstreams.shipping.enabled }}
+      location /shopify-nc-shipping-rates/ {
+        proxy_pass http://shipping/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      {{- end }}
+
+      {{- if .Values.upstreams.gateway.enabled }}
+      location /api/ {
+        proxy_pass http://gateway/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      {{- end }}
+    }
+    {{- end }}
+
+    {{- if .Values.upstreams.clientSpace.enabled }}
+    server {
+      listen 80;
+      server_name espace.apps.azersoft.nc;
+
+      location = /api/health {
+        proxy_pass http://client_space;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      location = /api/reset {
+        proxy_pass http://client_space;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      location /api/auth/ {
+        proxy_pass http://client_space;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      location /reset/ {
+        proxy_pass http://client_space;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      {{- if .Values.upstreams.gateway.enabled }}
+      location /api/trpc {
+        proxy_pass http://gateway;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+      {{- end }}
+      location / {
+        proxy_pass http://client_space;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+    }
+    {{- end }}
+
+    {{- if .Values.upstreams.keycloak.enabled }}
+    server {
+      listen 80;
+      server_name auth.azersoft.nc;
+
+      location / {
+        proxy_pass http://keycloak;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+    }
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-nginx
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "edge-nginx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: edge-nginx
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: edge-nginx
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: nginx
+          image: {{ .Values.image }}
+          ports:
+            - name: http
+              containerPort: 80
+              {{- if .Values.hostPorts.http }}
+              hostPort: {{ .Values.hostPorts.http }}
+              {{- end }}
+            - name: https
+              containerPort: 443
+              {{- if .Values.hostPorts.https }}
+              hostPort: {{ .Values.hostPorts.https }}
+              {{- end }}
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: conf
+          configMap:
+            name: edge-nginx-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-nginx
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "edge-nginx.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      name: http
+  selector:
+    app.kubernetes.io/name: edge-nginx
+    app.kubernetes.io/instance: {{ .Release.Name }}

@@ -1,0 +1,36 @@
+# DigitalOcean K3s droplet
+postgres:
+  storage: 20Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+valkey:
+  enabled: true
+
+garage:
+  enabled: true
+  dataStorage: 40Gi
+
+keycloak:
+  enabled: true
+
+gateway:
+  enabled: true
+
+mail:
+  enabled: true
+  image: ghcr.io/azersoft-nc/azr-mailer:latest
+  imagePullPolicy: Always
+  requireAuth: true
+  # Set the real SMTP host before expecting Ready (/ready needs SMTP_HOST).
+  smtp:
+    host: ""
+    port: "587"
+    secure: "false"
+  mailhog:
+    enabled: false

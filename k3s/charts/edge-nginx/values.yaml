@@ -1,0 +1,35 @@
+namespace: edge
+
+image: nginx:1.27-alpine
+replicas: 1
+
+# hostPort for mono-node; use NodePort/LB later if needed
+hostPorts:
+  http: 80
+  https: 443
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Upstream ClusterIPs (platform / apps namespaces). Disable when target is not deployed.
+upstreams:
+  www:
+    enabled: true
+    host: azr-www.apps.svc.cluster.local:8080
+  shipping:
+    enabled: true
+    host: nc-shipping-rates.apps.svc.cluster.local:3000
+  keycloak:
+    enabled: true
+    host: keycloak.platform.svc.cluster.local:8080
+  gateway:
+    enabled: true
+    host: gateway.platform.svc.cluster.local:8000
+  clientSpace:
+    enabled: false
+    host: client-space.apps.svc.cluster.local:3000

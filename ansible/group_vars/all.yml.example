@@ -1,0 +1,6 @@
+deploy_user: deploy
+deploy_group: deploy
+opt_root: /opt/azersoft
+
+# SSH hardening (set true after deploy key works)
+disable_password_auth: false

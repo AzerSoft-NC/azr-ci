@@ -1,0 +1,43 @@
+# ── IDE & editor ──────────────────────────────────────────────
+.cursor/plans/
+.vscode/
+.idea/
+.history/
+*.swp
+*~
+
+# ── System files ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# ── Secrets & crypto material ─────────────────────────────────
+*.enc
+*.secrets
+*.cert
+*.key
+*.pem
+*.p12
+*.p8
+*.p10
+*.p7b
+*.p7c
+*.p7m
+*.p7s
+*.p7z
+*.p8z
+
+# ── Local config / environment ────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Terraform / Ansible ───────────────────────────────────────
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform.tfvars
+ansible/inventory
+ansible/group_vars/all.yml
+*.retry

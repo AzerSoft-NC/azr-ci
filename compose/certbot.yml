@@ -1,0 +1,17 @@
+# Optional certbot renewal profile — run on the droplet, not in CI.
+#
+# Prerequisite: nginx container serves /.well-known from /var/www/certbot
+# (add a location block when enabling renewals).
+#
+# Example:
+#   docker compose -f certbot.yml run --rm certbot renew --webroot -w /var/www/certbot
+
+services:
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+
+volumes:
+  certbot_webroot:

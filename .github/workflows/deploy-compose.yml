@@ -1,0 +1,103 @@
+name: Deploy Compose app to droplet
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        description: Short app name (directory under /opt/azersoft)
+        required: true
+        type: string
+      image_name:
+        description: GHCR image name without registry (e.g. azersoft-nc/azr-www)
+        required: true
+        type: string
+      compose_file:
+        description: Compose file to use on the droplet
+        required: false
+        type: string
+        default: compose.prod.yml
+      deploy_path:
+        description: Remote deploy directory
+        required: false
+        type: string
+        default: ""
+    secrets:
+      DROPLET_HOST:
+        required: true
+      DROPLET_USER:
+        required: true
+      DROPLET_SSH_KEY:
+        required: true
+      APP_ENV:
+        required: true
+      GHCR_DEPLOY_TOKEN:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ inputs.image_name }}:${{ github.sha }}
+            ghcr.io/${{ inputs.image_name }}:latest
+
+      - name: Prepare remote path
+        id: remote
+        run: |
+          path="${{ inputs.deploy_path }}"
+          if [[ -z "$path" ]]; then
+            path="/opt/azersoft/${{ inputs.app_name }}"
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: Copy compose file to droplet
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          source: ${{ inputs.compose_file }}
+          target: ${{ steps.remote.outputs.path }}
+
+      - name: Deploy on droplet
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_ENV: ${{ secrets.APP_ENV }}
+          IMAGE: ghcr.io/${{ inputs.image_name }}:${{ github.sha }}
+          REMOTE_PATH: ${{ steps.remote.outputs.path }}
+          COMPOSE_FILE: ${{ inputs.compose_file }}
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          envs: APP_ENV,IMAGE,REMOTE_PATH,COMPOSE_FILE
+          script: |
+            set -euo pipefail
+            mkdir -p "${REMOTE_PATH}"
+            printf '%s\n' "${APP_ENV}" > "${REMOTE_PATH}/.env"
+            chmod 600 "${REMOTE_PATH}/.env"
+            cd "${REMOTE_PATH}"
+            export IMAGE
+            docker network inspect azersoft >/dev/null 2>&1 || docker network create azersoft
+            echo "${{ secrets.GHCR_DEPLOY_TOKEN }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+            docker compose -f "${COMPOSE_FILE}" pull
+            docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans
