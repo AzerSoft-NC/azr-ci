@@ -3,6 +3,18 @@ namespace: edge
 image: nginx:1.27-alpine
 replicas: 1
 
+# Public vhosts (ADR 0014). Override per Environment in values/*-edge.yaml.
+hosts:
+  apex: azersoft.nc
+  auth: auth.azersoft.nc
+  apps: apps.azersoft.nc
+  espaceApps: espace.apps.azersoft.nc
+
+# Local: mkcert Secret via `just tls-local`. Droplet: false until cert-manager / host mount.
+tls:
+  enabled: false
+  secretName: edge-tls
+
 # hostPort for mono-node; use NodePort/LB later if needed
 hostPorts:
   http: 80

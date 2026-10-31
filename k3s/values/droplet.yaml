@@ -10,17 +10,18 @@ postgres:
       memory: 2Gi
 
 valkey:
-  enabled: true
+  enabled: false
 
 garage:
-  enabled: true
+  enabled: false
   dataStorage: 40Gi
 
 keycloak:
   enabled: true
+  hostname: auth.azersoft.nc
 
 gateway:
-  enabled: true
+  enabled: false
 
 mail:
   enabled: true

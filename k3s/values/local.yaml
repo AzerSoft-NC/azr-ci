@@ -1,4 +1,4 @@
-# k3d / laptop — lighter footprint; Keycloak + Kong off by default
+# k3d / laptop — Horizon 1: Nginx + Postgres + Keycloak (ADR 0012)
 postgres:
   storage: 4Gi
   resources:
@@ -10,15 +10,23 @@ postgres:
       memory: 512Mi
 
 valkey:
-  enabled: true
+  enabled: false
 
 garage:
-  enabled: true
+  enabled: false
   metaStorage: 256Mi
   dataStorage: 5Gi
 
 keycloak:
-  enabled: false
+  enabled: true
+  hostname: auth.azersoft.local
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 768Mi
 
 gateway:
   enabled: false

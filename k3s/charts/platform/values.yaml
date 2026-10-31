@@ -59,6 +59,8 @@ keycloak:
   enabled: false
   image: quay.io/keycloak/keycloak:26.0
   replicas: 1
+  # Public hostname behind Nginx (OIDC issuer). Empty = KC_HOSTNAME_STRICT=false only.
+  hostname: ""
   resources:
     requests:
       cpu: 200m

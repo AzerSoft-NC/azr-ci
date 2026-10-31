@@ -1,7 +1,7 @@
 # K3s / k3d charts
 
 Charts/
-  platform/     # postgres, valkey, garage (S3), keycloak, kong gateway, mail
+  platform/     # Horizon 1: postgres, keycloak. H2: valkey, garage, kong. Mail optional.
   edge-nginx/   # TLS edge (ConfigMap vhosts; align with infra/azr-nginx on cutover)
 
 values/
@@ -43,7 +43,7 @@ On k3d, `just secrets-local` generates dev secrets idempotently.
 Fresh laptop: [docs/local-deploy.md](../../docs/local-deploy.md). From `ci/` (positional `env` argument — not `env=local`):
 
 ```bash
-just cluster-up              # k3d, Traefik disabled, :8080 mapped
+just cluster-up              # k3d, Traefik disabled, :80/:443 mapped
 just secrets-local           # k3d dev secrets (optional if you created secrets manually)
 just deploy local            # platform + edge (values/local*.yaml)
 just deploy droplet          # requires kubecontext azersoft-droplet
@@ -57,7 +57,7 @@ Values:
 | `values/local.yaml` / `droplet.yaml` | platform |
 | `values/local-edge.yaml` / `droplet-edge.yaml` | edge-nginx |
 
-Local edge defaults disable app upstreams until app charts exist; `/healthz` on `http://localhost:8080` is enough for first smoke.
+Local edge defaults disable app upstreams until app charts exist; `/healthz` on `http://localhost/healthz` is enough for first smoke. Enable upstreams in `values/local-edge.yaml` for `http://localhost/<prefix>/`.
 
 Compose Postgres for pre-K3s local work: `just up-pg` → `infra/azr-pg`.
 

@@ -27,11 +27,12 @@ cluster-up:
     set -euo pipefail
     export PATH="${HOME}/.local/bin:${PATH}"
     if k3d cluster list | grep -q '^azersoft-local'; then
-      echo "cluster azersoft-local already exists"
+      echo "cluster azersoft-local already exists (port map fixed at create; recreate if 80/443 missing)"
     else
       k3d cluster create azersoft-local \
         --k3s-arg "--disable=traefik@server:0" \
-        -p "8080:8080@server:0"
+        -p "80:80@server:0" \
+        -p "443:443@server:0"
     fi
     kubectl config use-context k3d-azersoft-local
 
@@ -74,6 +75,37 @@ secrets-local:
         --from-literal=auth-token="$(rand)"
     fi
 
+# mkcert → Secret edge-tls (ADR 0014). After secrets-local, before deploy local.
+tls-local:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    if ! command -v mkcert >/dev/null 2>&1; then
+      echo "mkcert not found. Install then re-run: https://github.com/FiloSottile/mkcert" >&2
+      echo "  e.g. sudo apt install mkcert   # or download the release binary" >&2
+      exit 1
+    fi
+    kubectl config use-context k3d-azersoft-local
+    kubectl create namespace edge --dry-run=client -o yaml | kubectl apply -f -
+    if ! mkcert -install; then
+      echo "WARN: could not trust CA in the OS store (often needs sudo). Re-run: mkcert -install" >&2
+      echo "      Secret will still be created; browsers may warn until the CA is trusted." >&2
+    fi
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    mkcert -cert-file "$tmp/tls.crt" -key-file "$tmp/tls.key" \
+      azersoft.local \
+      auth.azersoft.local \
+      apps.azersoft.local \
+      espace.apps.azersoft.local \
+      localhost \
+      127.0.0.1
+    kubectl -n edge create secret tls edge-tls \
+      --cert="$tmp/tls.crt" \
+      --key="$tmp/tls.key" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "edge-tls applied. /etc/hosts → 127.0.0.1 azersoft.local auth.azersoft.local apps.azersoft.local espace.apps.azersoft.local"
+
 # Helm deploy platform + edge. Usage: just deploy local | just deploy droplet
 deploy env="local":
     #!/usr/bin/env bash
@@ -84,6 +116,10 @@ deploy env="local":
         CONTEXT=k3d-azersoft-local
         VF="{{k3s}}/values/local.yaml"
         VE="{{k3s}}/values/local-edge.yaml"
+        if ! kubectl --context "$CONTEXT" -n edge get secret edge-tls >/dev/null 2>&1; then
+          echo "missing Secret edge/edge-tls — run: just tls-local" >&2
+          exit 1
+        fi
         ;;
       droplet)
         CONTEXT=azersoft-droplet

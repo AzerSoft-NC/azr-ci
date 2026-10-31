@@ -1,3 +1,5 @@
+{{- $tls := .Values.tls.enabled -}}
+{{- $h := .Values.hosts -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -19,9 +21,6 @@ data:
       include /etc/nginx/conf.d/*.conf;
     }
   default.conf: |
-    # Phase-1 HTTP edge — TLS terminates here later (cert-manager or host mount).
-    # Align vhosts with infra/azr-nginx when cutting over.
-
     {{- if .Values.upstreams.www.enabled }}
     upstream www { server {{ .Values.upstreams.www.host }}; }
     {{- end }}
@@ -38,21 +37,67 @@ data:
     upstream client_space { server {{ .Values.upstreams.clientSpace.host }}; }
     {{- end }}
 
+    {{- if $tls }}
+    # HTTP: readiness + redirect to HTTPS (ADR 0014)
     server {
       listen 80 default_server;
-      server_name _;
+      server_name {{ $h.apex }} {{ $h.auth }} {{ $h.apps }} {{ $h.espaceApps }} localhost _;
 
       location /healthz {
         return 200 'ok';
         add_header Content-Type text/plain;
       }
 
+      location / {
+        return 301 https://$host$request_uri;
+      }
+    }
+    {{- end }}
+
+    server {
+      {{- if $tls }}
+      {{ include "edge-nginx.listen-https" . | nindent 6 }}
+      {{- else }}
+      listen 80 default_server;
+      {{- end }}
+      server_name {{ $h.apex }} localhost _;
+
+      location /healthz {
+        return 200 'ok';
+        add_header Content-Type text/plain;
+      }
+
+      {{- if .Values.upstreams.shipping.enabled }}
+      location = /shopify-nc-shipping-rates {
+        return 301 $scheme://$host/shopify-nc-shipping-rates/$is_args$args;
+      }
+      location /shopify-nc-shipping-rates/ {
+        proxy_pass http://shipping/;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
+      }
+      {{- end }}
+
+      {{- if .Values.upstreams.gateway.enabled }}
+      location /api/ {
+        proxy_pass http://gateway/;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
+      }
+      {{- end }}
+
+      {{- if .Values.upstreams.clientSpace.enabled }}
+      location = /plein-cap/espace-client {
+        return 301 $scheme://$host/plein-cap/espace-client/$is_args$args;
+      }
+      location /plein-cap/espace-client/ {
+        proxy_pass http://client_space/;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
+      }
+      {{- end }}
+
       {{- if .Values.upstreams.www.enabled }}
       location / {
         proxy_pass http://www;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
       {{- else }}
       location / {
@@ -64,24 +109,24 @@ data:
 
     {{- if or .Values.upstreams.shipping.enabled .Values.upstreams.gateway.enabled }}
     server {
+      {{- if $tls }}
+      {{ include "edge-nginx.listen-https" . | nindent 6 }}
+      {{- else }}
       listen 80;
-      server_name apps.azersoft.nc;
+      {{- end }}
+      server_name {{ $h.apps }};
 
       {{- if .Values.upstreams.shipping.enabled }}
       location /shopify-nc-shipping-rates/ {
         proxy_pass http://shipping/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
       {{- end }}
 
       {{- if .Values.upstreams.gateway.enabled }}
       location /api/ {
         proxy_pass http://gateway/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
       {{- end }}
     }
@@ -89,60 +134,54 @@ data:
 
     {{- if .Values.upstreams.clientSpace.enabled }}
     server {
+      {{- if $tls }}
+      {{ include "edge-nginx.listen-https" . | nindent 6 }}
+      {{- else }}
       listen 80;
-      server_name espace.apps.azersoft.nc;
+      {{- end }}
+      server_name {{ $h.espaceApps }};
 
       location = /api/health {
         proxy_pass http://client_space;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
       location = /api/reset {
         proxy_pass http://client_space;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
       location /api/auth/ {
         proxy_pass http://client_space;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
       location /reset/ {
         proxy_pass http://client_space;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
       {{- if .Values.upstreams.gateway.enabled }}
       location /api/trpc {
         proxy_pass http://gateway;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
       {{- end }}
       location / {
         proxy_pass http://client_space;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
     }
     {{- end }}
 
     {{- if .Values.upstreams.keycloak.enabled }}
     server {
+      {{- if $tls }}
+      {{ include "edge-nginx.listen-https" . | nindent 6 }}
+      {{- else }}
       listen 80;
-      server_name auth.azersoft.nc;
+      {{- end }}
+      server_name {{ $h.auth }};
 
       location / {
         proxy_pass http://keycloak;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        {{- include "edge-nginx.proxy-headers" . | nindent 8 }}
       }
     }
     {{- end }}
@@ -156,6 +195,9 @@ metadata:
     {{- include "edge-nginx.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicas }}
+  # hostPort 80/443: RollingUpdate deadlocks (old pod keeps ports → new Pending).
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: edge-nginx
@@ -187,6 +229,11 @@ spec:
             - name: conf
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: default.conf
+            {{- if $tls }}
+            - name: tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           readinessProbe:
@@ -199,6 +246,11 @@ spec:
         - name: conf
           configMap:
             name: edge-nginx-conf
+        {{- if $tls }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -213,6 +265,11 @@ spec:
     - port: 80
       targetPort: http
       name: http
+    {{- if $tls }}
+    - port: 443
+      targetPort: https
+      name: https
+    {{- end }}
   selector:
     app.kubernetes.io/name: edge-nginx
     app.kubernetes.io/instance: {{ .Release.Name }}

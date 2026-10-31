@@ -1,6 +1,20 @@
-# edge-nginx overrides for droplet
+# edge-nginx — droplet prod hosts (ADR 0014). TLS via LE / host mount later — not mkcert.
 hostPorts:
   http: 80
   https: 443
-# Switch to GHCR image from infra/azr-nginx when published
 image: nginx:1.27-alpine
+
+hosts:
+  apex: azersoft.nc
+  auth: auth.azersoft.nc
+  apps: apps.azersoft.nc
+  espaceApps: espace.apps.azersoft.nc
+
+tls:
+  enabled: false
+
+upstreams:
+  keycloak:
+    enabled: true
+  gateway:
+    enabled: false
