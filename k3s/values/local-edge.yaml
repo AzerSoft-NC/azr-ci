@@ -14,12 +14,12 @@ tls:
   enabled: true
   secretName: edge-tls
 
-# Horizon 1: Keycloak vhost on; app / Kong upstreams off until deployed
+# Horizon 1: Keycloak + local app upstreams (www, shipping)
 upstreams:
   www:
-    enabled: false
+    enabled: true
   shipping:
-    enabled: false
+    enabled: true
   keycloak:
     enabled: true
   gateway:

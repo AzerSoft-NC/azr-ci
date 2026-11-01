@@ -1,0 +1,48 @@
+# App kind: vitrine (static/front) | service (API / Remix / etc.)
+kind: vitrine
+
+# Container image (local k3d: tag :dev + imagePullPolicy Never)
+image: app:latest
+imagePullPolicy: IfNotPresent
+
+replicas: 1
+
+# ClusterIP Service. Empty name → Release.Name (must match edge DNS).
+service:
+  name: ""
+  port: 8080
+  type: ClusterIP
+
+# Optional Secret envFrom (e.g. DB_URL). Chart never creates secrets.
+existingSecret: ""
+
+# Extra plain env (non-secret). Prefer existingSecret for credentials.
+env: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+readinessProbe:
+  enabled: true
+  path: /healthz
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+livenessProbe:
+  enabled: true
+  path: /healthz
+  initialDelaySeconds: 15
+  periodSeconds: 10
+
+# Prisma / schema apply Job (pre-install + pre-upgrade helm hooks).
+# Only rendered when kind=service && migrate.enabled.
+migrate:
+  enabled: false
+  command: ["yarn", "db:migrate"]
+  backoffLimit: 3
+  activeDeadlineSeconds: 300

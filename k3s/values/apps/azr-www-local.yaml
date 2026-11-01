@@ -1,0 +1,14 @@
+# azr-www — local k3d (vitrine)
+kind: vitrine
+image: azr-www:dev
+imagePullPolicy: Never
+replicas: 1
+
+service:
+  name: azr-www
+  port: 8080
+
+readinessProbe:
+  path: /healthz
+livenessProbe:
+  path: /healthz

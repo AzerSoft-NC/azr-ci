@@ -74,6 +74,20 @@ secrets-local:
       kubectl -n platform create secret generic platform-mail \
         --from-literal=auth-token="$(rand)"
     fi
+    kubectl create namespace apps --dry-run=client -o yaml | kubectl apply -f -
+    if kubectl -n apps get secret nc-shipping-rates >/dev/null 2>&1; then
+      echo "apps/nc-shipping-rates already exists"
+    else
+      if ! kubectl -n platform get secret platform-postgres >/dev/null 2>&1; then
+        echo "missing platform-postgres — create platform secrets first" >&2
+        exit 1
+      fi
+      ship_pwd="$(kubectl -n platform get secret platform-postgres -o jsonpath='{.data.shipping-rates-password}' | base64 -d)"
+      kubectl -n apps create secret generic nc-shipping-rates \
+        --from-literal=DB_URL="postgresql://shipping_rates:${ship_pwd}@postgres.platform.svc.cluster.local:5432/shipping_rates"
+      unset ship_pwd
+      echo "apps/nc-shipping-rates created (DB_URL from platform-postgres)"
+    fi
 
 # mkcert → Secret edge-tls (ADR 0014). After secrets-local, before deploy local.
 tls-local:
@@ -140,6 +154,68 @@ deploy env="local":
       -n edge --create-namespace \
       -f "{{k3s}}/charts/edge-nginx/values.yaml" \
       -f "$VE"
+
+# Map App name → repo dir | image:tag | Dockerfile (under src/azer-soft).
+# Accepts azr-www | nc-shipping-rates | shopify-nc-shipping-rates.
+_app_image name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{name}}" in
+      azr-www)
+        echo "azr-www|azr-www:dev|Dockerfile|azr-www"
+        ;;
+      nc-shipping-rates|shopify-nc-shipping-rates)
+        echo "shopify-nc-shipping-rates|nc-shipping-rates:dev|docker/Dockerfile.app|nc-shipping-rates"
+        ;;
+      *)
+        echo "unknown app {{name}} (expected azr-www | nc-shipping-rates | shopify-nc-shipping-rates)" >&2
+        exit 1
+        ;;
+    esac
+
+# Build :dev image on the laptop. Usage: just build-app azr-www
+build-app name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    IFS='|' read -r dir tag dockerfile _release <<< "$(just _app_image {{name}})"
+    docker build -f "{{apps}}/${dir}/${dockerfile}" -t "$tag" "{{apps}}/${dir}"
+    echo "built $tag"
+
+# Import :dev into k3d. Usage: just import-app azr-www
+import-app name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    IFS='|' read -r _dir tag _dockerfile _release <<< "$(just _app_image {{name}})"
+    k3d image import "$tag" -c azersoft-local
+    echo "imported $tag → k3d azersoft-local"
+
+# Helm install one App release. Usage: just deploy-app azr-www local
+deploy-app name env="local":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="${HOME}/.local/bin:${PATH}"
+    case "{{env}}" in
+      local) CONTEXT=k3d-azersoft-local ;;
+      droplet)
+        echo "droplet app values not wired yet (use local)" >&2
+        exit 1
+        ;;
+      *)
+        echo "env must be local" >&2
+        exit 1
+        ;;
+    esac
+    IFS='|' read -r _dir _tag _dockerfile release <<< "$(just _app_image {{name}})"
+    values="{{k3s}}/values/apps/${release}-{{env}}.yaml"
+    if [[ ! -f "$values" ]]; then
+      echo "missing values file: $values" >&2
+      exit 1
+    fi
+    kubectl config use-context "$CONTEXT"
+    helm upgrade --install "$release" "{{k3s}}/charts/app" \
+      -n apps --create-namespace \
+      -f "$values"
 
 down-cluster env="local":
     #!/usr/bin/env bash

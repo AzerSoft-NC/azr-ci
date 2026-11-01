@@ -3,18 +3,21 @@
 Charts/
   platform/     # Horizon 1: postgres, keycloak. H2: valkey, garage, kong. Mail optional.
   edge-nginx/   # TLS edge (ConfigMap vhosts; align with infra/azr-nginx on cutover)
+  app/          # Shared App chart (vitrine | service); one Helm release per App
 
 values/
-  local.yaml    # k3d
-  droplet.yaml  # DigitalOcean K3s
+  local.yaml / local-edge.yaml   # k3d platform + edge
+  droplet.yaml / droplet-edge.yaml
+  apps/*-local.yaml              # per-App overrides for charts/app
 
 ## Secrets (not in git)
 
-Create **before** `helm upgrade` (namespaces `platform` and `edge` must exist):
+Create **before** `helm upgrade` (namespaces `platform`, `edge`, and `apps` must exist):
 
 ```bash
 kubectl create namespace platform --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace edge --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace apps --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n platform create secret generic platform-postgres \
   --from-literal=postgres-password=... \
@@ -44,8 +47,10 @@ Fresh laptop: [docs/local-deploy.md](../../docs/local-deploy.md). From `ci/` (po
 
 ```bash
 just cluster-up              # k3d, Traefik disabled, :80/:443 mapped
-just secrets-local           # k3d dev secrets (optional if you created secrets manually)
+just secrets-local           # k3d dev secrets + apps/nc-shipping-rates DB_URL
 just deploy local            # platform + edge (values/local*.yaml)
+just build-app azr-www && just import-app azr-www && just deploy-app azr-www local
+just build-app nc-shipping-rates && just import-app nc-shipping-rates && just deploy-app nc-shipping-rates local
 just deploy droplet          # requires kubecontext azersoft-droplet
 just down-cluster local
 ```
@@ -56,8 +61,10 @@ Values:
 |------|--------|
 | `values/local.yaml` / `droplet.yaml` | platform |
 | `values/local-edge.yaml` / `droplet-edge.yaml` | edge-nginx |
+| `values/apps/azr-www-local.yaml` | app → release `azr-www` |
+| `values/apps/nc-shipping-rates-local.yaml` | app → release `nc-shipping-rates` |
 
-Local edge defaults disable app upstreams until app charts exist; `/healthz` on `http://localhost/healthz` is enough for first smoke. Enable upstreams in `values/local-edge.yaml` for `http://localhost/<prefix>/`.
+Local edge enables www + shipping upstreams (`azr-www.apps:8080`, `nc-shipping-rates.apps:3000`). Redeploy edge after flipping values if the cluster was already up.
 
 Compose Postgres for pre-K3s local work: `just up-pg` → `infra/azr-pg`.
 
